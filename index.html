@@ -3,10 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <title>Wings Run Pro</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <style>
-body { font-family: Arial; text-align:center; padding:20px; }
-button { padding:10px; margin:5px; font-size:16px; }
+body { font-family: Arial; text-align:center; padding:10px; }
+button { padding:10px; margin:5px; }
+#map { height:300px; margin-top:10px; }
 </style>
 </head>
 <body>
@@ -21,6 +26,8 @@ button { padding:10px; margin:5px; font-size:16px; }
 <p>Distanz: <span id="distance">0</span> km</p>
 <p>Catcher Abstand: <span id="gap">-</span></p>
 
+<div id="map"></div>
+
 <h3>📊 Verlauf</h3>
 <canvas id="chart"></canvas>
 
@@ -28,16 +35,32 @@ button { padding:10px; margin:5px; font-size:16px; }
 <ul id="history"></ul>
 
 <script>
+let map, marker, polyline;
+let path=[];
+
 let watchId, startTime, distance=0, lastPos=null;
 let catcherDistance=0, catcherStarted=false;
-let interval;
-let runData=[];
-let isTest=false;
+let interval, runData=[], isTest=false;
+
+function initMap(lat,lon){
+  map=L.map('map').setView([lat,lon],15);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'© OpenStreetMap'
+  }).addTo(map);
+
+  marker=L.marker([lat,lon]).addTo(map);
+  polyline=L.polyline([]).addTo(map);
+}
 
 function startRun(testMode){
   reset();
   isTest=testMode;
   startTime=Date.now();
+
+  navigator.geolocation.getCurrentPosition(pos=>{
+    initMap(pos.coords.latitude,pos.coords.longitude);
+  });
 
   watchId=navigator.geolocation.watchPosition(updatePos);
 
@@ -50,9 +73,7 @@ function startRun(testMode){
 function stopRun(){
   navigator.geolocation.clearWatch(watchId);
   clearInterval(interval);
-
   speak("Lauf beendet");
-
   saveRun();
   drawChart();
 }
@@ -62,6 +83,7 @@ function reset(){
   catcherDistance=0;
   catcherStarted=false;
   runData=[];
+  path=[];
 }
 
 function updatePos(pos){
@@ -73,6 +95,12 @@ function updatePos(pos){
 
   lastPos={lat:latitude,lon:longitude};
   document.getElementById("distance").innerText=distance.toFixed(2);
+
+  // MAP UPDATE
+  path.push([latitude,longitude]);
+  marker.setLatLng([latitude,longitude]);
+  polyline.setLatLngs(path);
+  map.setView([latitude,longitude]);
 }
 
 function updateTime(){
@@ -82,8 +110,8 @@ function updateTime(){
   document.getElementById("time").innerText=
     min+":"+Math.floor(elapsed%60).toString().padStart(2,'0');
 
-  announcements(min,elapsed);
-  updateCatcher(min,elapsed);
+  announcements(min);
+  updateCatcher(min);
 
   runData.push({
     time:elapsed/60,
@@ -92,23 +120,20 @@ function updateTime(){
   });
 }
 
-function announcements(min,sec){
-  let checkpoints = isTest ?
-    [4,3,2,1,0.5] :
-    [30,20,10,5,3,2,1,0.5];
+function announcements(min){
+  let list=isTest?[4,3,2,1]:[30,20,10,5,3,2,1];
 
-  checkpoints.forEach(t=>{
-    if(Math.abs(min - t) < 0.02){
-      speak("Catcher Car startet in " + t + (t<1?" Minuten":" Minuten"));
+  list.forEach(t=>{
+    if(min===t){
+      speak("Catcher Car startet in "+t+" Minuten");
     }
   });
 }
 
-function updateCatcher(min,sec){
+function updateCatcher(min){
+  let start=isTest?5:30;
 
-  let startTimeMin = isTest ? 5 : 30;
-
-  if(min>=startTimeMin && !catcherStarted){
+  if(min>=start && !catcherStarted){
     speak("Catcher Car gestartet");
     catcherStarted=true;
   }
@@ -118,7 +143,7 @@ function updateCatcher(min,sec){
   let speed=0;
 
   if(isTest){
-    speed=Math.floor((min-startTimeMin))+1;
+    speed=Math.floor(min-start)+1;
   }else{
     if(min<60) speed=14;
     else if(min<90) speed=15;
@@ -133,16 +158,14 @@ function updateCatcher(min,sec){
   document.getElementById("gap").innerText=gap.toFixed(2);
 
   if(gap<=0){
-    speak("Eingeholt! Zeit "+document.getElementById("time").innerText);
+    speak("Eingeholt!");
     stopRun();
   }
 }
 
 function audioUpdate(){
-  let t=document.getElementById("time").innerText;
-  let d=distance.toFixed(2);
-
-  let txt="Zeit "+t+" Distanz "+d;
+  let txt="Zeit "+document.getElementById("time").innerText+
+  " Distanz "+distance.toFixed(2);
 
   if(catcherStarted){
     txt+=" Abstand "+document.getElementById("gap").innerText;
@@ -151,8 +174,8 @@ function audioUpdate(){
   speak(txt);
 }
 
-function speak(text){
-  let u=new SpeechSynthesisUtterance(text);
+function speak(t){
+  let u=new SpeechSynthesisUtterance(t);
   u.lang="de-DE";
   speechSynthesis.speak(u);
 }
@@ -195,9 +218,7 @@ function loadHistory(){
 }
 
 function drawChart(){
-  let ctx=document.getElementById("chart");
-
-  new Chart(ctx,{
+  new Chart(document.getElementById("chart"),{
     type:"line",
     data:{
       labels:runData.map(d=>d.time.toFixed(1)),
@@ -208,7 +229,6 @@ function drawChart(){
     }
   });
 }
-
 </script>
 
 </body>
