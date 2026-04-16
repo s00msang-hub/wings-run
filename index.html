@@ -1,130 +1,212 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <title>Wings Run</title>
+<meta charset="UTF-8">
+<title>Wings Run Pro</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body { font-family: Arial; text-align:center; padding:20px; }
+button { padding:10px; margin:5px; font-size:16px; }
+</style>
 </head>
-<body style="font-family: Arial; text-align:center; padding:20px;">
+<body>
 
-<h1>🏃 Wings for Life Run</h1>
+<h2>🏃 Wings Run</h2>
 
-<button onclick="startRun()" style="padding:15px;font-size:18px;">
-Run starten
-</button>
+<button onclick="startRun(false)">Run starten</button>
+<button onclick="startRun(true)">🚶 Geh-Testmodus</button>
+<button onclick="stopRun()">⛔ Stop</button>
 
 <p>Zeit: <span id="time">0:00</span></p>
 <p>Distanz: <span id="distance">0</span> km</p>
-<p>Catcher-Car Abstand: <span id="gap">-</span></p>
+<p>Catcher Abstand: <span id="gap">-</span></p>
+
+<h3>📊 Verlauf</h3>
+<canvas id="chart"></canvas>
+
+<h3>📁 Historie</h3>
+<ul id="history"></ul>
 
 <script>
+let watchId, startTime, distance=0, lastPos=null;
+let catcherDistance=0, catcherStarted=false;
+let interval;
+let runData=[];
+let isTest=false;
 
-let watchId;
-let startTime;
-let distance = 0;
-let lastPosition = null;
+function startRun(testMode){
+  reset();
+  isTest=testMode;
+  startTime=Date.now();
 
-let catcherDistance = 0;
-let catcherStarted = false;
+  watchId=navigator.geolocation.watchPosition(updatePos);
 
-const speedTable = [
-  { time: 30, speed: 0 },
-  { time: 60, speed: 14 },
-  { time: 90, speed: 15 },
-  { time: 120, speed: 16 },
-  { time: 150, speed: 17 },
-  { time: 180, speed: 18 }
-];
+  interval=setInterval(updateTime,1000);
+  setInterval(audioUpdate,300000);
 
-function startRun() {
-  startTime = Date.now();
-
-  watchId = navigator.geolocation.watchPosition(updatePosition);
-
-  setInterval(updateTime, 1000);
-  setInterval(audioUpdate, 300000);
+  loadHistory();
 }
 
-function updatePosition(position) {
-  const lat = position.coords.latitude;
-  const lon = position.coords.longitude;
+function stopRun(){
+  navigator.geolocation.clearWatch(watchId);
+  clearInterval(interval);
 
-  if (lastPosition) {
-    const d = getDistance(lastPosition.lat, lastPosition.lon, lat, lon);
-    distance += d;
+  speak("Lauf beendet");
+
+  saveRun();
+  drawChart();
+}
+
+function reset(){
+  distance=0;
+  catcherDistance=0;
+  catcherStarted=false;
+  runData=[];
+}
+
+function updatePos(pos){
+  const {latitude,longitude}=pos.coords;
+
+  if(lastPos){
+    distance+=getDist(lastPos.lat,lastPos.lon,latitude,longitude);
   }
 
-  lastPosition = { lat, lon };
-  document.getElementById("distance").innerText = distance.toFixed(2);
+  lastPos={lat:latitude,lon:longitude};
+  document.getElementById("distance").innerText=distance.toFixed(2);
 }
 
-function updateTime() {
-  const elapsed = (Date.now() - startTime) / 1000;
-  const minutes = Math.floor(elapsed / 60);
+function updateTime(){
+  let elapsed=(Date.now()-startTime)/1000;
+  let min=Math.floor(elapsed/60);
 
-  document.getElementById("time").innerText =
-    minutes + ":" + Math.floor(elapsed % 60).toString().padStart(2, '0');
+  document.getElementById("time").innerText=
+    min+":"+Math.floor(elapsed%60).toString().padStart(2,'0');
 
-  updateCatcher(minutes);
+  announcements(min,elapsed);
+  updateCatcher(min,elapsed);
+
+  runData.push({
+    time:elapsed/60,
+    runner:distance,
+    catcher:catcherDistance
+  });
 }
 
-function updateCatcher(minutes) {
+function announcements(min,sec){
+  let checkpoints = isTest ?
+    [4,3,2,1,0.5] :
+    [30,20,10,5,3,2,1,0.5];
 
-  if (minutes >= 30 && !catcherStarted) {
-    speak("Das Catcher Car ist gestartet");
-    catcherStarted = true;
-  }
-
-  if (!catcherStarted) return;
-
-  let speed = 0;
-
-  for (let i = 0; i < speedTable.length; i++) {
-    if (minutes < speedTable[i].time) {
-      speed = speedTable[i].speed;
-      break;
+  checkpoints.forEach(t=>{
+    if(Math.abs(min - t) < 0.02){
+      speak("Catcher Car startet in " + t + (t<1?" Minuten":" Minuten"));
     }
+  });
+}
+
+function updateCatcher(min,sec){
+
+  let startTimeMin = isTest ? 5 : 30;
+
+  if(min>=startTimeMin && !catcherStarted){
+    speak("Catcher Car gestartet");
+    catcherStarted=true;
   }
 
-  catcherDistance += speed / 3600;
+  if(!catcherStarted) return;
 
-  const gap = distance - catcherDistance;
+  let speed=0;
 
-  document.getElementById("gap").innerText = gap.toFixed(2) + " km";
+  if(isTest){
+    speed=Math.floor((min-startTimeMin))+1;
+  }else{
+    if(min<60) speed=14;
+    else if(min<90) speed=15;
+    else if(min<120) speed=16;
+    else if(min<150) speed=17;
+    else speed=18;
+  }
 
-  if (gap <= 0) {
-    speak("Du wurdest eingeholt!");
-    navigator.geolocation.clearWatch(watchId);
+  catcherDistance+=speed/3600;
+
+  let gap=distance-catcherDistance;
+  document.getElementById("gap").innerText=gap.toFixed(2);
+
+  if(gap<=0){
+    speak("Eingeholt! Zeit "+document.getElementById("time").innerText);
+    stopRun();
   }
 }
 
-function audioUpdate() {
-  let text = "Zeit " + document.getElementById("time").innerText +
-             ", Distanz " + distance.toFixed(2);
+function audioUpdate(){
+  let t=document.getElementById("time").innerText;
+  let d=distance.toFixed(2);
 
-  if (catcherStarted) {
-    text += ", Abstand " + document.getElementById("gap").innerText;
+  let txt="Zeit "+t+" Distanz "+d;
+
+  if(catcherStarted){
+    txt+=" Abstand "+document.getElementById("gap").innerText;
   }
 
-  speak(text);
+  speak(txt);
 }
 
-function speak(text) {
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = "de-DE";
+function speak(text){
+  let u=new SpeechSynthesisUtterance(text);
+  u.lang="de-DE";
   speechSynthesis.speak(u);
 }
 
-function getDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI/180;
-  const dLon = (lon2 - lon1) * Math.PI/180;
+function getDist(lat1,lon1,lat2,lon2){
+  let R=6371;
+  let dLat=(lat2-lat1)*Math.PI/180;
+  let dLon=(lon2-lon1)*Math.PI/180;
 
-  const a = Math.sin(dLat/2)**2 +
-    Math.cos(lat1*Math.PI/180) *
-    Math.cos(lat2*Math.PI/180) *
+  let a=Math.sin(dLat/2)**2+
+    Math.cos(lat1*Math.PI/180)*
+    Math.cos(lat2*Math.PI/180)*
     Math.sin(dLon/2)**2;
 
-  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+  return R*(2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
+}
+
+function saveRun(){
+  let runs=JSON.parse(localStorage.getItem("runs")||"[]");
+
+  runs.push({
+    date:new Date().toLocaleString(),
+    dist:distance.toFixed(2),
+    time:document.getElementById("time").innerText
+  });
+
+  localStorage.setItem("runs",JSON.stringify(runs));
+}
+
+function loadHistory(){
+  let runs=JSON.parse(localStorage.getItem("runs")||"[]");
+  let list=document.getElementById("history");
+  list.innerHTML="";
+
+  runs.slice(-5).reverse().forEach(r=>{
+    let li=document.createElement("li");
+    li.innerText=`${r.date} - ${r.dist} km - ${r.time}`;
+    list.appendChild(li);
+  });
+}
+
+function drawChart(){
+  let ctx=document.getElementById("chart");
+
+  new Chart(ctx,{
+    type:"line",
+    data:{
+      labels:runData.map(d=>d.time.toFixed(1)),
+      datasets:[
+        {label:"Runner",data:runData.map(d=>d.runner)},
+        {label:"Catcher",data:runData.map(d=>d.catcher)}
+      ]
+    }
+  });
 }
 
 </script>
