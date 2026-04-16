@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Wings Run</title>
+</head>
+<body style="font-family: Arial; text-align:center; padding:20px;">
+
+<h1>🏃 Wings for Life Run</h1>
+
+<button onclick="startRun()" style="padding:15px;font-size:18px;">
+Run starten
+</button>
+
+<p>Zeit: <span id="time">0:00</span></p>
+<p>Distanz: <span id="distance">0</span> km</p>
+<p>Catcher-Car Abstand: <span id="gap">-</span></p>
+
+<script>
+
+let watchId;
+let startTime;
+let distance = 0;
+let lastPosition = null;
+
+let catcherDistance = 0;
+let catcherStarted = false;
+
+const speedTable = [
+  { time: 30, speed: 0 },
+  { time: 60, speed: 14 },
+  { time: 90, speed: 15 },
+  { time: 120, speed: 16 },
+  { time: 150, speed: 17 },
+  { time: 180, speed: 18 }
+];
+
+function startRun() {
+  startTime = Date.now();
+
+  watchId = navigator.geolocation.watchPosition(updatePosition);
+
+  setInterval(updateTime, 1000);
+  setInterval(audioUpdate, 300000);
+}
+
+function updatePosition(position) {
+  const lat = position.coords.latitude;
+  const lon = position.coords.longitude;
+
+  if (lastPosition) {
+    const d = getDistance(lastPosition.lat, lastPosition.lon, lat, lon);
+    distance += d;
+  }
+
+  lastPosition = { lat, lon };
+  document.getElementById("distance").innerText = distance.toFixed(2);
+}
+
+function updateTime() {
+  const elapsed = (Date.now() - startTime) / 1000;
+  const minutes = Math.floor(elapsed / 60);
+
+  document.getElementById("time").innerText =
+    minutes + ":" + Math.floor(elapsed % 60).toString().padStart(2, '0');
+
+  updateCatcher(minutes);
+}
+
+function updateCatcher(minutes) {
+
+  if (minutes >= 30 && !catcherStarted) {
+    speak("Das Catcher Car ist gestartet");
+    catcherStarted = true;
+  }
+
+  if (!catcherStarted) return;
+
+  let speed = 0;
+
+  for (let i = 0; i < speedTable.length; i++) {
+    if (minutes < speedTable[i].time) {
+      speed = speedTable[i].speed;
+      break;
+    }
+  }
+
+  catcherDistance += speed / 3600;
+
+  const gap = distance - catcherDistance;
+
+  document.getElementById("gap").innerText = gap.toFixed(2) + " km";
+
+  if (gap <= 0) {
+    speak("Du wurdest eingeholt!");
+    navigator.geolocation.clearWatch(watchId);
+  }
+}
+
+function audioUpdate() {
+  let text = "Zeit " + document.getElementById("time").innerText +
+             ", Distanz " + distance.toFixed(2);
+
+  if (catcherStarted) {
+    text += ", Abstand " + document.getElementById("gap").innerText;
+  }
+
+  speak(text);
+}
+
+function speak(text) {
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = "de-DE";
+  speechSynthesis.speak(u);
+}
+
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI/180;
+  const dLon = (lon2 - lon1) * Math.PI/180;
+
+  const a = Math.sin(dLat/2)**2 +
+    Math.cos(lat1*Math.PI/180) *
+    Math.cos(lat2*Math.PI/180) *
+    Math.sin(dLon/2)**2;
+
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+}
+
+</script>
+
+</body>
+</html>
