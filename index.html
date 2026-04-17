@@ -53,6 +53,8 @@ line = L.polyline([]).addTo(map);
 function startRun(test){
   if(isRunning) return;
 
+resetRun();
+  
   isRunning=true;
   isTest=test;
 
