@@ -142,6 +142,16 @@ function updateCatcher(sec){
   }
 }
 
+  function resetRun(){
+  distance = 0;
+  lastPos = null;
+  catcherDistance = 0;
+  path = [];
+
+  document.getElementById("distance").innerText = "0";
+  document.getElementById("gap").innerText = "-";
+}
+
 function updatePos(pos){
   let {latitude,longitude}=pos.coords;
 
