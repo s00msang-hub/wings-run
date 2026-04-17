@@ -71,10 +71,17 @@ function startRun(test){
 function stopRun(){
   if(!isRunning) return;
 
-  isRunning=false;
+  isRunning = false;
 
-  navigator.geolocation.clearWatch(watchId);
+  // Timer stoppen
   clearInterval(interval);
+  interval = null;
+
+  // GPS stoppen
+  if(watchId){
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
 
   speak("Lauf gestoppt");
 }
