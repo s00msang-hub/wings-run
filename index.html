@@ -54,17 +54,12 @@ function startRun(test){
   if(isRunning) return;
 
 resetRun();
-  
-  isRunning=true;
-  isTest=test;
 
-  startTime=Date.now();
-  distance=0;
-  catcherDistance=0;
-  catcherStarted=false;
-  announced.clear();
-  path=[];
+isRunning = true;
+isTest = test;
 
+startTime = Date.now();
+announced.clear();
   watchId=navigator.geolocation.watchPosition(updatePos);
 
   interval=setInterval(tick,1000);
@@ -155,20 +150,32 @@ function updateCatcher(sec){
 }
 
 function updatePos(pos){
-  let {latitude,longitude}=pos.coords;
+  if(!isRunning) return; // 🔴 verhindert Zombie-Updates
 
-  if(lastPos){
-    distance+=getDist(lastPos.lat,lastPos.lon,latitude,longitude);
+  let {latitude, longitude} = pos.coords;
+
+  // ERSTE Position nach Start → NICHT berechnen!
+  if(!lastPos){
+    lastPos = {lat: latitude, lon: longitude};
+
+    // Marker trotzdem setzen
+    marker.setLatLng([latitude, longitude]);
+    map.setView([latitude, longitude]);
+
+    return; // 🔴 ganz wichtig
   }
 
-  lastPos={lat:latitude,lon:longitude};
+  // normale Distanzberechnung
+  distance += getDist(lastPos.lat, lastPos.lon, latitude, longitude);
 
-  document.getElementById("distance").innerText=distance.toFixed(2);
+  lastPos = {lat: latitude, lon: longitude};
 
-  path.push([latitude,longitude]);
-  marker.setLatLng([latitude,longitude]);
-  line.setLatLngs(path);
-  map.setView([latitude,longitude]);
+  document.getElementById("distance").innerText = distance.toFixed(2);
+
+  // Karte aktualisieren
+  path.push([latitude, longitude]);
+  marker.setLatLng([latitude, longitude]);
+  polyline.setLatLngs(path);
 }
 
 function speak(t){
